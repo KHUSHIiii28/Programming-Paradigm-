@@ -1,0 +1,116 @@
+const int pirSensorPin = 2;
+const int soundSensorPin = 3; // Assuming digital sensor
+const int soilMoisturePin = A0; // Assuming analog sensor
+const int temperatureSensorPin = A1; // Assuming analog sensor
+const int ledPinMotion = 13;
+const int ledPinMoisture = 12;
+const int ledPinTemperature = 11; // New LED for temperature
+const int timerInterval = 2000; // Timer interrupt interval (milliseconds)
+
+volatile int motionDetected = LOW;
+volatile int soundDetected = LOW; // Variable to track sound detection
+volatile int soilMoistureValue = 0;
+volatile int temperatureValue = 0; // Store raw temperature reading
+volatile bool timerInterruptHappened = false;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Pin modes for PIR and sound sensors
+  pinMode(pirSensorPin, INPUT);
+  pinMode(soundSensorPin, INPUT);
+
+  // Pin modes for LEDs
+  pinMode(ledPinMotion, OUTPUT);
+  pinMode(ledPinMoisture, OUTPUT);
+  pinMode(ledPinTemperature, OUTPUT);
+
+  // Enable interrupts for motion sensor and sound sensor
+  attachInterrupt(digitalPinToInterrupt(pirSensorPin), motionInterrupt, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(soundSensorPin), soundInterrupt, CHANGE);
+
+  // Set up timer interrupt using Timer1 overflow (CTC mode)
+  TCCR1A = 0; // Set all TCCR1A bits to 0 for normal mode
+  TCCR1B = (1 << CS10); // Set prescaler to 1 (no prescaling)
+  OCR1A = F_CPU / 1000 * timerInterval - 1; // Set compare match register for interrupt frequency
+  TIMSK1 |= bit(OCIE1A); // Enable Timer1 compare match A interrupt
+
+  // Enable interrupts globally
+  sei();
+}
+
+void loop() {
+  // Process temperature data periodically (within `loop` or timer interrupt)
+  temperatureValue = analogRead(temperatureSensorPin); // Assuming analog sensor conversion
+
+  // Convert temperature reading to desired format (e.g., Celsius)
+  float temperature = (temperatureValue * 5.0 / 1023) * 100;
+
+  // Process data based on all sensors and flags
+  if (motionDetected && soilMoistureValue < 500 && temperature > 25) {
+    // Soil is dry, motion detected, and temperature is high (adjust thresholds)
+    Serial.println("Dry soil, motion, and high temperature detected! Taking action...");
+    digitalWrite(ledPinMoisture, LOW); // Indicate low moisture
+    digitalWrite(ledPinTemperature, HIGH); // Indicate high temperature
+    // Implement your specific action here (e.g., irrigation, cooling)
+  } else if (motionDetected && temperature > 25) {
+    // Motion detected, but other conditions might be normal
+    Serial.println("Motion and high temperature detected!");
+    digitalWrite(ledPinTemperature, HIGH); // Indicate high temperature
+    // ... (take action based on specific scenario)
+  } else if (soilMoistureValue < 500 && temperature > 25) {
+    // Soil is dry and temperature is high, even without motion
+    Serial.println("Dry soil and high temperature detected!");
+    digitalWrite(ledPinMoisture, LOW); // Indicate low moisture
+    digitalWrite(ledPinTemperature, HIGH); // Indicate high temperature
+    // ... (take action based on specific scenario)
+  } else if (soilMoistureValue < 500) {
+    // Soil is dry, handle different temperature conditions
+    Serial.println("Dry soil detected!");
+    digitalWrite(ledPinMoisture, LOW); // Indicate low moisture
+    // ... (take action based on specific temperature)
+  } else if (temperature > 25) {
+    // High temperature detected, handle different soil moisture conditions
+    Serial.println("High temperature detected!");
+    digitalWrite(ledPinTemperature, HIGH); // Indicate high temperature
+    // ... (take action based on specific soil moisture)
+  } else {
+    // Neither dry soil, motion, nor high temperature detected
+    // ... (optionally handle normal conditions)
+  }
+
+  // Display message if sound is detected along with motion
+  if (motionDetected && soundDetected) {
+    Serial.println("Motion and sound detected!");
+    // Add specific action for motion and sound detected
+  }
+
+  // Clear flags after processing
+  motionDetected = LOW;
+  soundDetected = LOW;
+  timerInterruptHappened = false;
+
+  // Delay or use timer interrupt for periodic checking
+}
+
+void motionInterrupt() {
+  // Interrupt service routine for motion sensor
+  if (digitalRead(pirSensorPin) == HIGH) {
+    motionDetected = HIGH;
+    digitalWrite(ledPinMotion, HIGH); // Turn on motion LED
+  } else {
+    digitalWrite(ledPinMotion, LOW); // Turn off motion LED
+  }
+}
+
+void soundInterrupt() {
+  // Interrupt service routine for sound sensor
+  if (digitalRead(soundSensorPin) == HIGH) {
+    soundDetected = HIGH;
+  }
+}
+
+ISR(TIMER1_COMPA_vect) {
+  // Interrupt service routine for Timer1 compare match A
+  timerInterruptHappened = true;
+}
